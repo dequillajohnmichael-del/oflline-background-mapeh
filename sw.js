@@ -1,13 +1,10 @@
-const CACHE_NAME = 'ar-messenger-bg-v2';
+const CACHE_NAME = 'ar-messenger-bg-v3';
 const ASSETS_TO_CACHE = [
   './',
   './index.html',
   './manifest.json',
   './background360.webp.webp',
-  'https://cloudflare.com',
-  'https://jsdelivr.net',
-  'https://jsdelivr.net',
-  'https://jsdelivr.net'
+  'https://cloudflare.com'
 ];
 
 self.addEventListener('install', (event) => {
