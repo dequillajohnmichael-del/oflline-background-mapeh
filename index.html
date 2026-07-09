@@ -3,150 +3,90 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>360 AR Camera Ecosystem</title>
+    <title>360 AR Camera System</title>
+    <!-- Stable production build of A-Frame -->
+    <script src="https://cloudflare.com"></script>
     <style>
         body, html {
             margin: 0; padding: 0; width: 100%; height: 100%;
             overflow: hidden; background-color: #000;
-            font-family: system-ui, -apple-system, sans-serif;
         }
-        /* Real-time live camera layer positioned upfront and screen-blended */
+        /* Your active, mirrored camera layer blended over the 360 space */
         #webcam {
             position: absolute; top: 0; left: 0; width: 100%; height: 100%;
-            object-fit: cover; z-index: 2; transform: scaleX(-1);
-            mix-blend-mode: screen; pointer-events: none;
+            object-fit: cover; 
+            z-index: 2; 
+            transform: scaleX(-1);
+            /* This strips out the room background behind you and keeps your face */
+            mix-blend-mode: screen; 
+            pointer-events: none; 
+            display: none;
         }
-        /* Panoramic 360 viewer element window */
-        #sphereViewer {
+        /* Custom UI Start button layer handling iOS/Android requirements */
+        #interactiveOverlay {
             position: absolute; top: 0; left: 0; width: 100%; height: 100%;
-            z-index: 1; overflow: hidden; display: flex; align-items: center; justify-content: center;
-        }
-        #panoramaStage {
-            width: 4000px; height: 100%;
-            background-repeat: repeat-x; background-position: center;
-            background-size: auto 100%; transform: translate3d(0px, 0px, 0px);
-            will-change: transform;
-        }
-        #overlayControl {
-            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
-            z-index: 3; display: flex; flex-direction: column;
-            justify-content: center; align-items: center;
-            background: rgba(0,0,0,0.8); transition: opacity 0.4s ease;
+            z-index: 9999; background: #111; display: flex;
+            flex-direction: column; justify-content: center; align-items: center;
         }
         .start-btn {
-            background: #007aff; color: #fff; border: none;
-            padding: 18px 40px; font-size: 18px; font-weight: bold;
-            border-radius: 50px; cursor: pointer;
-            box-shadow: 0 10px 30px rgba(0,122,255,0.4);
-        }
-        .hint-text {
-            color: #aaa; margin-top: 15px; font-size: 14px; text-align: center; max-width: 80%;
+            background: #007aff; color: white; border: none; font-family: sans-serif;
+            padding: 20px 40px; font-size: 18px; font-weight: bold;
+            border-radius: 50px; cursor: pointer; box-shadow: 0 10px 30px rgba(0,122,255,0.4);
         }
     </style>
 </head>
 <body>
 
-    <div id="overlayControl">
-        <button class="start-btn" id="triggerBtn">Start Video Call Environment</button>
-        <p class="hint-text">Allows camera access and initiates 360° phone sensor rotation</p>
+    <!-- Permission Trigger Interface overlay -->
+    <div id="interactiveOverlay">
+        <button class="start-btn" id="startAR">Launch AR Video Call</button>
+        <p style="color: #666; font-family: sans-serif; margin-top:15px; font-size:14px;">Activates camera and 360° motion sensors</p>
     </div>
 
+    <!-- Natively hardware-accelerated video view element layer -->
     <video id="webcam" autoplay playsinline muted></video>
-    
-    <div id="sphereViewer">
-        <div id="panoramaStage"></div>
-    </div>
+
+    <!-- Stable A-Frame Scene Layer -->
+    <a-scene vr-mode-ui="enabled: false" loading-screen="enabled: false">
+        <a-assets>
+            <!-- Image source path will be injected dynamically via JavaScript below -->
+            <img id="spaceBg" crossorigin="anonymous">
+        </a-assets>
+
+        <!-- Wrapped space sphere geometry bubble mapped over camera node coordinates -->
+        <a-sky src="#spaceBg" rotation="0 -90 0"></a-sky>
+
+        <!-- Automated orientation tracking component platform camera controller -->
+        
+    </a-scene>
 
     <script>
-        const triggerBtn = document.getElementById('triggerBtn');
-        const overlayControl = document.getElementById('overlayControl');
+        const startBtn = document.getElementById('startAR');
+        const overlay = document.getElementById('interactiveOverlay');
         const webcam = document.getElementById('webcam');
-        const panoramaStage = document.getElementById('panoramaStage');
+        const bgAsset = document.getElementById('spaceBg');
 
         // Dynamically compute the path to your folder on GitHub Pages
         const basePath = window.location.pathname.substring(0, window.location.pathname.lastIndexOf('/') + 1);
-        const imageLocation = basePath + 'background360.webp.webp';
+        bgAsset.src = basePath + 'background360.webp.webp';
 
-        // Preload image directly into phone memory for immediate second-loads
-        panoramaStage.style.backgroundImage = `url('${imageLocation}')`;
-
-        let currentX = 0;
-        let targetX = 0;
-
-        // Fallback swipe mechanics to turn the background if sensors are locked or missing
-        let isDragging = false;
-        let previousTouchX = 0;
-
-        window.addEventListener('touchstart', (e) => {
-            isDragging = true;
-            previousTouchX = e.touches[0].clientX;
-        });
-
-        window.addEventListener('touchmove', (e) => {
-            if (!isDragging) return;
-            const deltaX = e.touches[0].clientX - previousTouchX;
-            previousTouchX = e.touches[0].clientX;
-            currentX += deltaX * 1.5;
-            renderMovement();
-        });
-
-        window.addEventListener('touchend', () => isDragging = false);
-
-        function renderMovement() {
-            // Clamps loop repeats cleanly for continuous spinning
-            if (currentX > 2000) currentX -= 2000;
-            if (currentX < -2000) currentX += 2000;
-            panoramaStage.style.transform = `translate3d(${currentX}px, 0px, 0px)`;
+        function startCamera() {
+            webcam.style.display = 'block';
+            navigator.mediaDevices.getUserMedia({ 
+                video: { facingMode: "user", width: { ideal: 1280 }, height: { ideal: 720 } }, 
+                audio: false 
+            })
+            .then(stream => {
+                webcam.srcObject = stream;
+                overlay.style.display = 'none'; // Closes screen block interface seamlessly
+            })
+            .catch(err => {
+                alert("Camera blocked. Please access your URL strictly via secure HTTPS protocol layout.");
+            });
         }
 
-        // Standard device sensor processing module
-        function handleMotion(event) {
-            if (isDragging) return;
-            // Captures left/right rotation axis speeds natively
-            const rotationSpeed = event.gamma || event.alpha || 0;
-            if (Math.abs(rotationSpeed) > 0.1) {
-                currentX -= rotationSpeed * 0.4;
-                renderMovement();
-            }
-        }
-
-        function activateSensors() {
-            if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
-                DeviceOrientationEvent.requestPermission()
-                    .then(permissionState => {
-                        if (permissionState === 'granted') {
-                            window.addEventListener('deviceorientation', handleMotion, true);
-                        }
-                    }).catch(console.error);
-            } else {
-                window.addEventListener('deviceorientation', handleMotion, true);
-            }
-        }
-
-        function launchHardwareCamera() {
-            const rules = {
-                video: {
-                    facingMode: "user",
-                    width: { ideal: 1280 },
-                    height: { ideal: 720 }
-                },
-                audio: false
-            };
-
-            navigator.mediaDevices.getUserMedia(rules)
-                .then(stream => {
-                    webcam.srcObject = stream;
-                    overlayControl.style.opacity = '0';
-                    setTimeout(() => overlayControl.style.display = 'none', 400);
-                })
-                .catch(err => {
-                    alert("Camera error. Please ensure you are viewing over a secure HTTPS web address.");
-                });
-        }
-
-        triggerBtn.addEventListener('click', () => {
-            activateSensors();
-            launchHardwareCamera();
+        startBtn.addEventListener('click', () => {
+            startCamera();
         });
     </script>
 </body>
