@@ -1,16 +1,16 @@
-const CACHE_NAME = 'ar-messenger-bg-v3';
-const ASSETS_TO_CACHE = [
-  './',
-  './index.html',
-  './manifest.json',
-  './background360.webp.webp',
-  'https://cloudflare.com'
-];
+const CACHE_NAME = 'ar-messenger-bg-v4';
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
-      return cache.addAll(ASSETS_TO_CACHE);
+      // Fetches assets dynamically relative to the scope path structure
+      return cache.addAll([
+        './',
+        './index.html',
+        './manifest.json',
+        './background360.webp.webp',
+        'https://cloudflare.com'
+      ]);
     }).then(() => self.skipWaiting())
   );
 });
