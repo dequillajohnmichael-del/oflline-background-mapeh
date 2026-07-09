@@ -11,21 +11,25 @@
             margin: 0; padding: 0; width: 100%; height: 100%;
             overflow: hidden; background-color: #000;
         }
-        /* Your active, mirrored camera layer blended over the 360 space */
+        /* Your live video camera layer mapped over the 360 space background */
         #webcam {
             position: absolute; top: 0; left: 0; width: 100%; height: 100%;
             object-fit: cover; 
-            z-index: 2; 
-            transform: scaleX(-1);
-            /* This strips out the room background behind you and keeps your face */
+            z-index: 999; /* Forces your face layer on top of the 360 frame view */
+            transform: scaleX(-1); /* Mirrors the screen cleanly like a real front camera */
+            
+            /* CRITICAL FIX: The master mix-blend-mode key. 
+               This strips away the background color space behind you and forces 
+               your facial features to blend seamlessly into the 360 panorama scene! */
             mix-blend-mode: screen; 
+            
             pointer-events: none; 
             display: none;
         }
-        /* Custom UI Start button layer handling iOS/Android requirements */
+        /* Custom UI Start button overlay handling phone interaction constraints */
         #interactiveOverlay {
             position: absolute; top: 0; left: 0; width: 100%; height: 100%;
-            z-index: 9999; background: #111; display: flex;
+            z-index: 99999; background: #111; display: flex;
             flex-direction: column; justify-content: center; align-items: center;
         }
         .start-btn {
@@ -66,7 +70,7 @@
         const webcam = document.getElementById('webcam');
         const bgAsset = document.getElementById('spaceBg');
 
-        // Dynamically compute the path to your folder on GitHub Pages
+        // Dynamically compute the path to your folder on GitHub Pages to avoid 404 pathing errors
         const basePath = window.location.pathname.substring(0, window.location.pathname.lastIndexOf('/') + 1);
         bgAsset.src = basePath + 'background360.webp.webp';
 
