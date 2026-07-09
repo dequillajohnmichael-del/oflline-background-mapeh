@@ -3,9 +3,9 @@
   "name": "360 AR Virtual Background Camera",
   "icons": [
     {
-      "src": "https://jsdelivr.net",
-      "type": "image/png",
-      "sizes": "512x512"
+      "src": "https://cloudflare.com",
+      "sizes": "512x512",
+      "type": "image/png"
     }
   ],
   "start_url": "./index.html",
