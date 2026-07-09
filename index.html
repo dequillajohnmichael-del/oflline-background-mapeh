@@ -10,77 +10,83 @@
             margin: 0; padding: 0; width: 100%; height: 100%;
             overflow: hidden; background-color: #000; font-family: system-ui, -apple-system, sans-serif;
         }
-        #webcam { display: none; }
-        #outputCanvas {
+        /* Camera stays mirrored, responsive, and blended over the environment */
+        #webcam {
             position: absolute; top: 0; left: 0;
-            width: 100%; height: 100%; object-fit: cover; z-index: 2;
+            width: 100%; height: 100%; object-fit: cover;
+            z-index: 2; transform: scaleX(-1);
+            mix-blend-mode: screen; pointer-events: none;
+        }
+        /* Three.js canvas layer handles the orientation background tracking */
+        #glCanvas {
+            position: absolute; top: 0; left: 0;
+            width: 100%; height: 100%; z-index: 1;
         }
         #btnStart {
             position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
             z-index: 10; padding: 18px 36px; background: #007aff; color: white;
             border: none; border-radius: 30px; font-size: 18px; font-weight: bold;
-            cursor: pointer; box-shadow: 0 10px 25px rgba(0,122,255,0.4); transition: 0.2s;
+            cursor: pointer; box-shadow: 0 10px 25px rgba(0,122,255,0.4);
         }
     </style>
     <script src="https://cloudflare.com"></script>
-    <script src="https://jsdelivr.net" crossorigin="anonymous"></script>
 </head>
 <body>
 
     <button id="btnStart">Launch AR Environment</button>
     <video id="webcam" autoplay playsinline muted></video>
-    <canvas id="outputCanvas"></canvas>
+    <canvas id="glCanvas"></canvas>
 
     <script>
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
-                navigator.serviceWorker.register('./sw.js').then(() => console.log('PWA Cached'));
+                navigator.serviceWorker.register('./sw.js').then(() => console.log('PWA Active'));
             });
         }
 
         const video = document.getElementById('webcam');
-        const outputCanvas = document.getElementById('outputCanvas');
-        const ctx = outputCanvas.getContext('2d');
+        const glCanvas = document.getElementById('glCanvas');
         const btnStart = document.getElementById('btnStart');
 
-        let scene, camera, renderer, glCanvas;
-        let selfieSegmentation;
+        let scene, camera, renderer, sphere;
 
         function init360() {
-            glCanvas = document.createElement('canvas');
             scene = new THREE.Scene();
-            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 1, 1000);
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 1, 1100);
             
-            renderer = new THREE.WebGLRenderer({ canvas: glCanvas, antialias: true, alpha: false });
+            renderer = new THREE.WebGLRenderer({ canvas: glCanvas, antialias: true });
+            renderer.setPixelRatio(window.devicePixelRatio);
             renderer.setSize(window.innerWidth, window.innerHeight);
 
+            // Inverted geometry forces texture map directly inside the viewing bubble
             const geometry = new THREE.SphereGeometry(500, 60, 40);
             geometry.scale(-1, 1, 1);
 
             const texture = new THREE.TextureLoader().load('./background360.webp.webp');
             const material = new THREE.MeshBasicMaterial({ map: texture });
-            const sphere = new THREE.Mesh(geometry, material);
+            sphere = new THREE.Mesh(geometry, material);
             scene.add(sphere);
 
             window.addEventListener('resize', onResize);
-            onResize();
+            animate();
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            renderer.render(scene, camera);
         }
 
         function onResize() {
-            const w = window.innerWidth;
-            const h = window.innerHeight;
-            outputCanvas.width = w;
-            outputCanvas.height = h;
-            camera.aspect = w / h;
+            camera.aspect = window.innerWidth / window.innerHeight;
             camera.updateProjectionMatrix();
-            renderer.setSize(w, h);
+            renderer.setSize(window.innerWidth, window.innerHeight);
         }
 
         function initSensors() {
             if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
                 DeviceOrientationEvent.requestPermission().then(state => {
                     if (state === 'granted') window.addEventListener('deviceorientation', rotateBackground);
-                });
+                }).catch(err => console.error("Sensor block:", err));
             } else {
                 window.addEventListener('deviceorientation', rotateBackground);
             }
@@ -97,42 +103,15 @@
         }
 
         function startCamera() {
-            navigator.mediaDevices.getUserMedia({ video: { facingMode: "user", width: 640, height: 480 }, audio: false })
-                .then(stream => {
-                    video.srcObject = stream;
-                    video.addEventListener('loadeddata', () => selfieSegmentation.send({ image: video }));
-                });
-        }
-
-        function initAI() {
-            // Fixed cross-origin loading pathway mirror
-            selfieSegmentation = new SelfieSegmentation({
-                locateFile: (file) => `https://jsdelivr.net{file}`
-            });
-
-            selfieSegmentation.setOptions({ modelSelection: 1 });
-            selfieSegmentation.onResults(processCompositeFrame);
-        }
-
-        function processCompositeFrame(results) {
-            ctx.clearRect(0, 0, outputCanvas.width, outputCanvas.height);
-            renderer.render(scene, camera);
-            ctx.drawImage(glCanvas, 0, 0, outputCanvas.width, outputCanvas.height);
-
-            ctx.save();
-            ctx.drawImage(results.segmentationMask, 0, 0, outputCanvas.width, outputCanvas.height);
-            ctx.globalCompositeOperation = 'source-in';
-            ctx.drawImage(results.image, 0, 0, outputCanvas.width, outputCanvas.height);
-            ctx.restore();
-
-            requestAnimationFrame(() => selfieSegmentation.send({ image: video }));
+            navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" }, audio: false })
+                .then(stream => { video.srcObject = stream; })
+                .catch(err => console.error("Camera access denied:", err));
         }
 
         btnStart.addEventListener('click', () => {
             btnStart.style.display = 'none';
             init360();
             initSensors();
-            initAI();
             startCamera();
         });
     </script>
