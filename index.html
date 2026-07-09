@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>360 AR Camera System</title>
+    <style>
+        body, html {
+            margin: 0; padding: 0; width: 100%; height: 100%;
+            overflow: hidden; background-color: #111; font-family: system-ui, -apple-system, sans-serif;
+            color: white; display: flex; justify-content: center; align-items: center;
+        }
+        #webcam {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            object-fit: cover; z-index: 2; transform: scaleX(-1);
+            mix-blend-mode: screen; pointer-events: none; display: none;
+        }
+        #glCanvas {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 1; display: none;
+        }
+        #setupBox {
+            position: relative; z-index: 10; background: rgba(0,0,0,0.85);
+            padding: 30px; border-radius: 20px; text-align: center;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5); max-width: 85%;
+        }
+        .btn {
+            display: inline-block; background: #007aff; color: white;
+            padding: 14px 28px; border: none; border-radius: 50px;
+            font-size: 16px; font-weight: bold; cursor: pointer;
+            margin-top: 15px; box-shadow: 0 5px 15px rgba(0,122,255,0.4);
+        }
+        input[type="file"] { display: none; }
+        .file-label {
+            display: inline-block; background: #34c759; color: white;
+            padding: 12px 24px; border-radius: 50px; font-weight: bold;
+            cursor: pointer; margin-top: 10px; box-shadow: 0 5px 15px rgba(52,199,89,0.4);
+        }
+        #statusText { margin-top: 10px; color: #aaa; font-size: 14px; }
+    </style>
+    <script src="https://cloudflare.com"></script>
+</head>
+<body>
+
+    <div id="setupBox">
+        <h2 style="margin-top:0;">360° AR Background</h2>
+        <p id="infoMsg">Please load your 360° image asset to initialize the local engine mapping.</p>
+        
+        <label for="imageLoader" class="file-label" id="uploadBtn">📁 Choose background360.webp.webp</label>
+        <input type="file" id="imageLoader" accept="image/*">
+        
+        <div id="statusText"></div>
+        <button id="btnStart" class="btn" style="display:none;">Launch AR Environment</button>
+    </div>
+
+    <video id="webcam" autoplay playsinline muted></video>
+    <canvas id="glCanvas"></canvas>
+
+    <script>
+        const video = document.getElementById('webcam');
+        const glCanvas = document.getElementById('glCanvas');
+        const btnStart = document.getElementById('btnStart');
+        const imageLoader = document.getElementById('imageLoader');
+        const uploadBtn = document.getElementById('uploadBtn');
+        const statusText = document.getElementById('statusText');
+        const infoMsg = document.getElementById('infoMsg');
+        const setupBox = document.getElementById('setupBox');
+
+        let scene, camera, renderer, sphere;
+        let base64Image = localStorage.getItem('cached_360_bg');
+
+        // Check if image is already saved on the user's phone from a previous run
+        if (base64Image) {
+            infoMsg.innerText = "⚡ Local 360° background asset detected successfully! No download required.";
+            uploadBtn.style.display = 'none';
+            btnStart.style.display = 'inline-block';
+        }
+
+        // Handle raw file upload/selection cleanly
+        imageLoader.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            statusText.innerText = "Processing image array matrix...";
+            const reader = new FileReader();
+            reader.onload = function(event) {
+                try {
+                    base64Image = event.target.result;
+                    localStorage.setItem('cached_360_bg', base64Image);
+                    statusText.innerText = "✅ Saved locally! Next visits will load instantly.";
+                    uploadBtn.style.display = 'none';
+                    btnStart.style.display = 'inline-block';
+                } catch(error) {
+                    statusText.innerText = "❌ Image file size too large for local cache. Try a smaller file size.";
+                    btnStart.style.display = 'inline-block'; 
+                }
+            };
+            reader.readAsDataURL(file);
+        });
+
+        function init360() {
+            glCanvas.style.display = 'block';
+            scene = new THREE.Scene();
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 1, 1100);
+            
+            renderer = new THREE.WebGLRenderer({ canvas: glCanvas, antialias: true });
+            renderer.setPixelRatio(window.devicePixelRatio);
+            renderer.setSize(window.innerWidth, window.innerHeight);
+
+            const geometry = new THREE.SphereGeometry(500, 60, 40);
+            geometry.scale(-1, 1, 1); // Invert inside-out
+
+            // Load directly from memory bypasses CORS/Network tracking bugs 100%
+            const textureLoader = new THREE.TextureLoader();
+            const texture = textureLoader.load(base64Image || './background360.webp.webp');
+            const material = new THREE.MeshBasicMaterial({ map: texture });
+            sphere = new THREE.Mesh(geometry, material);
+            scene.add(sphere);
+
+            window.addEventListener('resize', onResize);
+            animate();
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            renderer.render(scene, camera);
+        }
+
+        function onResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        function initSensors() {
+            if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+                DeviceOrientationEvent.requestPermission().then(state => {
+                    if (state === 'granted') {
+                        window.addEventListener('deviceorientation', rotateBackground);
+                    }
+                }).catch(err => alert("Sensor alignment interrupted: " + err));
+            } else {
+                window.addEventListener('deviceorientation', rotateBackground);
+            }
+        }
+
+        function rotateBackground(e) {
+            if (!e.alpha) return;
+            const alpha = THREE.MathUtils.degToRad(e.alpha);
+            const beta = THREE.MathUtils.degToRad(e.beta);
+            const gamma = THREE.MathUtils.degToRad(e.gamma);
+            
+            const euler = new THREE.Euler(beta, alpha, -gamma, 'YXZ');
+            camera.quaternion.setFromEuler(euler);
+        }
+
+        function startCamera() {
+            video.style.display = 'block';
+            navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" }, audio: false })
+                .then(stream => { video.srcObject = stream; })
+                .catch(err => alert("Camera block: Please use a secure HTTPS link."));
+        }
+
+        btnStart.addEventListener('click', () => {
+            setupBox.style.display = 'none';
+            init360();
+            initSensors();
+            startCamera();
+        });
+    </script>
+</body>
+</html>
