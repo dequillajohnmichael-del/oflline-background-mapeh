@@ -3,168 +3,150 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>360 AR Camera System</title>
+    <title>360 AR Camera Ecosystem</title>
     <style>
         body, html {
             margin: 0; padding: 0; width: 100%; height: 100%;
-            overflow: hidden; background-color: #111; font-family: system-ui, -apple-system, sans-serif;
-            color: white; display: flex; justify-content: center; align-items: center;
+            overflow: hidden; background-color: #000;
+            font-family: system-ui, -apple-system, sans-serif;
         }
+        /* Real-time live camera layer positioned upfront and screen-blended */
         #webcam {
             position: absolute; top: 0; left: 0; width: 100%; height: 100%;
             object-fit: cover; z-index: 2; transform: scaleX(-1);
-            mix-blend-mode: screen; pointer-events: none; display: none;
+            mix-blend-mode: screen; pointer-events: none;
         }
-        #glCanvas {
-            position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 1; display: none;
+        /* Panoramic 360 viewer element window */
+        #sphereViewer {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            z-index: 1; overflow: hidden; display: flex; align-items: center; justify-content: center;
         }
-        #setupBox {
-            position: relative; z-index: 10; background: rgba(0,0,0,0.85);
-            padding: 30px; border-radius: 20px; text-align: center;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.5); max-width: 85%;
+        #panoramaStage {
+            width: 4000px; height: 100%;
+            background-repeat: repeat-x; background-position: center;
+            background-size: auto 100%; transform: translate3d(0px, 0px, 0px);
+            will-change: transform;
         }
-        .btn {
-            display: inline-block; background: #007aff; color: white;
-            padding: 14px 28px; border: none; border-radius: 50px;
-            font-size: 16px; font-weight: bold; cursor: pointer;
-            margin-top: 15px; box-shadow: 0 5px 15px rgba(0,122,255,0.4);
+        #overlayControl {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            z-index: 3; display: flex; flex-direction: column;
+            justify-content: center; align-items: center;
+            background: rgba(0,0,0,0.8); transition: opacity 0.4s ease;
         }
-        input[type="file"] { display: none; }
-        .file-label {
-            display: inline-block; background: #34c759; color: white;
-            padding: 12px 24px; border-radius: 50px; font-weight: bold;
-            cursor: pointer; margin-top: 10px; box-shadow: 0 5px 15px rgba(52,199,89,0.4);
+        .start-btn {
+            background: #007aff; color: #fff; border: none;
+            padding: 18px 40px; font-size: 18px; font-weight: bold;
+            border-radius: 50px; cursor: pointer;
+            box-shadow: 0 10px 30px rgba(0,122,255,0.4);
         }
-        #statusText { margin-top: 10px; color: #aaa; font-size: 14px; }
+        .hint-text {
+            color: #aaa; margin-top: 15px; font-size: 14px; text-align: center; max-width: 80%;
+        }
     </style>
-    <script src="https://cloudflare.com"></script>
 </head>
 <body>
 
-    <div id="setupBox">
-        <h2 style="margin-top:0;">360° AR Background</h2>
-        <p id="infoMsg">Please load your 360° image asset to initialize the local engine mapping.</p>
-        
-        <label for="imageLoader" class="file-label" id="uploadBtn">📁 Choose background360.webp.webp</label>
-        <input type="file" id="imageLoader" accept="image/*">
-        
-        <div id="statusText"></div>
-        <button id="btnStart" class="btn" style="display:none;">Launch AR Environment</button>
+    <div id="overlayControl">
+        <button class="start-btn" id="triggerBtn">Start Video Call Environment</button>
+        <p class="hint-text">Allows camera access and initiates 360° phone sensor rotation</p>
     </div>
 
     <video id="webcam" autoplay playsinline muted></video>
-    <canvas id="glCanvas"></canvas>
+    
+    <div id="sphereViewer">
+        <div id="panoramaStage"></div>
+    </div>
 
     <script>
-        const video = document.getElementById('webcam');
-        const glCanvas = document.getElementById('glCanvas');
-        const btnStart = document.getElementById('btnStart');
-        const imageLoader = document.getElementById('imageLoader');
-        const uploadBtn = document.getElementById('uploadBtn');
-        const statusText = document.getElementById('statusText');
-        const infoMsg = document.getElementById('infoMsg');
-        const setupBox = document.getElementById('setupBox');
+        const triggerBtn = document.getElementById('triggerBtn');
+        const overlayControl = document.getElementById('overlayControl');
+        const webcam = document.getElementById('webcam');
+        const panoramaStage = document.getElementById('panoramaStage');
 
-        let scene, camera, renderer, sphere;
-        let base64Image = localStorage.getItem('cached_360_bg');
+        // Dynamically compute the path to your folder on GitHub Pages
+        const basePath = window.location.pathname.substring(0, window.location.pathname.lastIndexOf('/') + 1);
+        const imageLocation = basePath + 'background360.webp.webp';
 
-        // Check if image is already saved on the user's phone from a previous run
-        if (base64Image) {
-            infoMsg.innerText = "⚡ Local 360° background asset detected successfully! No download required.";
-            uploadBtn.style.display = 'none';
-            btnStart.style.display = 'inline-block';
-        }
+        // Preload image directly into phone memory for immediate second-loads
+        panoramaStage.style.backgroundImage = `url('${imageLocation}')`;
 
-        // Handle raw file upload/selection cleanly
-        imageLoader.addEventListener('change', (e) => {
-            const file = e.target.files[0];
-            if (!file) return;
+        let currentX = 0;
+        let targetX = 0;
 
-            statusText.innerText = "Processing image array matrix...";
-            const reader = new FileReader();
-            reader.onload = function(event) {
-                try {
-                    base64Image = event.target.result;
-                    localStorage.setItem('cached_360_bg', base64Image);
-                    statusText.innerText = "✅ Saved locally! Next visits will load instantly.";
-                    uploadBtn.style.display = 'none';
-                    btnStart.style.display = 'inline-block';
-                } catch(error) {
-                    statusText.innerText = "❌ Image file size too large for local cache. Try a smaller file size.";
-                    btnStart.style.display = 'inline-block'; 
-                }
-            };
-            reader.readAsDataURL(file);
+        // Fallback swipe mechanics to turn the background if sensors are locked or missing
+        let isDragging = false;
+        let previousTouchX = 0;
+
+        window.addEventListener('touchstart', (e) => {
+            isDragging = true;
+            previousTouchX = e.touches[0].clientX;
         });
 
-        function init360() {
-            glCanvas.style.display = 'block';
-            scene = new THREE.Scene();
-            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 1, 1100);
-            
-            renderer = new THREE.WebGLRenderer({ canvas: glCanvas, antialias: true });
-            renderer.setPixelRatio(window.devicePixelRatio);
-            renderer.setSize(window.innerWidth, window.innerHeight);
+        window.addEventListener('touchmove', (e) => {
+            if (!isDragging) return;
+            const deltaX = e.touches[0].clientX - previousTouchX;
+            previousTouchX = e.touches[0].clientX;
+            currentX += deltaX * 1.5;
+            renderMovement();
+        });
 
-            const geometry = new THREE.SphereGeometry(500, 60, 40);
-            geometry.scale(-1, 1, 1); // Invert inside-out
+        window.addEventListener('touchend', () => isDragging = false);
 
-            // Load directly from memory bypasses CORS/Network tracking bugs 100%
-            const textureLoader = new THREE.TextureLoader();
-            const texture = textureLoader.load(base64Image || './background360.webp.webp');
-            const material = new THREE.MeshBasicMaterial({ map: texture });
-            sphere = new THREE.Mesh(geometry, material);
-            scene.add(sphere);
-
-            window.addEventListener('resize', onResize);
-            animate();
+        function renderMovement() {
+            // Clamps loop repeats cleanly for continuous spinning
+            if (currentX > 2000) currentX -= 2000;
+            if (currentX < -2000) currentX += 2000;
+            panoramaStage.style.transform = `translate3d(${currentX}px, 0px, 0px)`;
         }
 
-        function animate() {
-            requestAnimationFrame(animate);
-            renderer.render(scene, camera);
-        }
-
-        function onResize() {
-            camera.aspect = window.innerWidth / window.innerHeight;
-            camera.updateProjectionMatrix();
-            renderer.setSize(window.innerWidth, window.innerHeight);
-        }
-
-        function initSensors() {
-            if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
-                DeviceOrientationEvent.requestPermission().then(state => {
-                    if (state === 'granted') {
-                        window.addEventListener('deviceorientation', rotateBackground);
-                    }
-                }).catch(err => alert("Sensor alignment interrupted: " + err));
-            } else {
-                window.addEventListener('deviceorientation', rotateBackground);
+        // Standard device sensor processing module
+        function handleMotion(event) {
+            if (isDragging) return;
+            // Captures left/right rotation axis speeds natively
+            const rotationSpeed = event.gamma || event.alpha || 0;
+            if (Math.abs(rotationSpeed) > 0.1) {
+                currentX -= rotationSpeed * 0.4;
+                renderMovement();
             }
         }
 
-        function rotateBackground(e) {
-            if (!e.alpha) return;
-            const alpha = THREE.MathUtils.degToRad(e.alpha);
-            const beta = THREE.MathUtils.degToRad(e.beta);
-            const gamma = THREE.MathUtils.degToRad(e.gamma);
-            
-            const euler = new THREE.Euler(beta, alpha, -gamma, 'YXZ');
-            camera.quaternion.setFromEuler(euler);
+        function activateSensors() {
+            if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+                DeviceOrientationEvent.requestPermission()
+                    .then(permissionState => {
+                        if (permissionState === 'granted') {
+                            window.addEventListener('deviceorientation', handleMotion, true);
+                        }
+                    }).catch(console.error);
+            } else {
+                window.addEventListener('deviceorientation', handleMotion, true);
+            }
         }
 
-        function startCamera() {
-            video.style.display = 'block';
-            navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" }, audio: false })
-                .then(stream => { video.srcObject = stream; })
-                .catch(err => alert("Camera block: Please use a secure HTTPS link."));
+        function launchHardwareCamera() {
+            const rules = {
+                video: {
+                    facingMode: "user",
+                    width: { ideal: 1280 },
+                    height: { ideal: 720 }
+                },
+                audio: false
+            };
+
+            navigator.mediaDevices.getUserMedia(rules)
+                .then(stream => {
+                    webcam.srcObject = stream;
+                    overlayControl.style.opacity = '0';
+                    setTimeout(() => overlayControl.style.display = 'none', 400);
+                })
+                .catch(err => {
+                    alert("Camera error. Please ensure you are viewing over a secure HTTPS web address.");
+                });
         }
 
-        btnStart.addEventListener('click', () => {
-            setupBox.style.display = 'none';
-            init360();
-            initSensors();
-            startCamera();
+        triggerBtn.addEventListener('click', () => {
+            activateSensors();
+            launchHardwareCamera();
         });
     </script>
 </body>
